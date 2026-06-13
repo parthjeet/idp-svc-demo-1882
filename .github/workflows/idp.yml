@@ -1,0 +1,41 @@
+name: idp-pipeline
+'on':
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+permissions:
+  contents: read
+  packages: write
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    env:
+      GIT_SHA: ${{ github.sha }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Build image
+      run: docker build -t ghcr.io/parthjeet/idp-svc-demo-1882:${GIT_SHA} .
+    - name: Unit tests
+      run: |-
+        pip install uv
+        uv sync
+        uv run pytest -q
+    - name: SonarQube
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: sonar-scanner -Dsonar.projectKey=idp-svc-demo-1882 -Dsonar.host.url=$SONAR_HOST_URL
+        -Dsonar.login=$SONAR_TOKEN
+    - name: Trivy
+      run: trivy image --exit-code 1 --severity HIGH,CRITICAL ghcr.io/parthjeet/idp-svc-demo-1882:${GIT_SHA}
+    - name: Publish image
+      env:
+        REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+        REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+      run: |-
+        echo $REGISTRY_TOKEN | docker login ghcr.io -u $REGISTRY_USER --password-stdin
+        docker push ghcr.io/parthjeet/idp-svc-demo-1882:${GIT_SHA}
